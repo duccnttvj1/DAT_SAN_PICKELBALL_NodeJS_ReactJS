@@ -93,19 +93,4 @@ router.post("/:courtId", async (req, res) => {
   }
 });
 
-router.get("/typeOfFields/:id", async (req, res) => {
-  const courtId = req.params.id;
-  try {
-    const unqueFieldTypes = await CourtFields.findAll({
-      where: { courtId: courtId },
-      attributes: ["fieldType"],
-      group: ["fieldType"],
-    });
-    res.json(unqueFieldTypes);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch field types" });
-  }
-});
-
 module.exports = router;

@@ -1,0 +1,77 @@
+.notice-box {
+    /* Màu nền gradient vàng tươi đến vàng xanh */
+    background: linear-gradient(to right, #F0E54C, #B9D443); 
+    
+    padding: 8px 15px;
+    
+    display: flex;
+    align-items: center;
+    gap: 5px; /* Khoảng cách giữa icon và chữ */
+    border-radius: 5px;
+    /* Tạo hiệu ứng bóng mờ nhẹ */
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.9); 
+}
+
+.notice-icon {
+    color: #c4540e; 
+    
+    font-size: 1.3em; 
+}
+
+.notice-text {
+    font-weight: 600; /* Bán đậm cho chữ "Lưu ý" */
+    font-size: 1em;
+    color: #768D1E; /* Màu chữ xanh lá vàng */
+    white-space: nowrap; /* Đảm bảo chữ không xuống dòng */
+}
+
+a{
+    text-decoration: underline;
+    color: #FFD700;
+}
+
+/* Slot cell styling */
+.slot-cell{
+    background-color: rgba(255,255,255,0.04);
+    transition: all 0.2s ease;
+  min-height: 50px;
+  font-size: 0.85rem;
+}
+.slot-available{
+    background-color: #28a745; /* Xanh lá */
+  color: white;
+  cursor: pointer;
+}
+
+.slot-pending {
+  background-color: #ffc107; /* Vàng cam */
+  color: #212529; /* Đen */
+  cursor: not-allowed;
+}
+
+.slot-booked{
+    background-color: #dc3545;
+    color: white;
+    opacity: 0.9;
+    cursor: not-allowed;
+}
+.slot-selected{
+    background-color: #007bff; /* Xanh dương */
+  color: white;
+  border: 2px solid #0056b3;
+  box-shadow: 0 0 5px rgba(0, 123, 255, 0.7);
+}
+.order-info h5{color:#ffd54a}
+.booking-panel .btn-outline-light{color:#fff;border-color:rgba(255,255,255,0.12)}
+
+/* Image sizing for booking detail to keep layout stable */
+.booking-image{
+    max-height:400px; /* limit height so the info panel stays aligned */
+    width:auto;
+    display:block;
+    object-fit:cover; /* crop if needed */
+}
+
+@media (max-width: 768px){
+    .booking-image{max-height:120px}
+}

@@ -1,0 +1,189 @@
+.hover-button:hover {
+  background-color: #ffc107 !important;
+  cursor: pointer !important;
+  border: none;
+  color: white !important;
+}
+.hover-button {
+    border-color: white;
+}
+
+.courtDetail .bi-clock{
+    color: #0d6efd !important;
+    font-size: 1rem !important;
+    font-weight: bolder !important;
+}
+
+.direction{
+    color: #0d6efd !important;
+    font-size: 2rem !important;
+    font-weight: bolder !important;
+}
+
+.telephone{
+    color: #0d6efd !important;
+    font-size: 1.5rem !important;
+}
+
+.avatarCourt{
+    position: relative;
+    background-position: center center;
+    background-size: contain;
+}
+
+.fieldType{
+    background-color: #e7f1ff;
+    color: #0d6efd;
+    padding: 5px 10px;
+    border-radius: 15px;
+    margin: 5px 0;
+    display: inline-block;
+}
+
+.infoCourt{
+    border-radius: 15px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    padding: 20px;
+}
+
+/* ================================
+   TAB CONTENT - THÔNG TIN CHI TIẾT
+   ================================ */
+.tab-content {
+  background-color: #fff;
+  border-radius: 0 0 12px 12px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* --- Tab 1: Thông tin --- */
+#tab1 .info-text {
+  font-size: 18px;
+  line-height: 1.8;
+  color: #555;
+  background-color: #f8f9fa;
+  padding: 16px;
+  border-radius: 10px;
+  border-left: 4px solid #ffc107;
+}
+
+/* ================================
+   TAB 2: DỊCH VỤ - CÓ NỀN NHƯ TERMS
+   ================================ */
+#tab2 .service-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#tab2 .service-container {
+  background-color: #f8f9fa;
+  padding: 16px;
+  border-radius: 10px;
+  border-left: 4px solid #ffc107;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Mỗi dòng dịch vụ */
+#tab2 .service-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #333;
+  padding: 10px 0;
+  transition: all 0.2s ease;
+}
+
+#tab2 .service-item:last-child {
+  padding-bottom: 0;
+}
+
+#tab2 .service-item:first-child {
+  padding-top: 0;
+}
+
+/* Dấu check xanh */
+#tab2 .service-item::before {
+  content: "✓";
+  color: #28a745;
+  font-weight: bold;
+  font-size: 18px;
+  min-width: 24px;
+}
+
+/* Hover: nền sáng hơn */
+#tab2 .service-item:hover {
+  background-color: #e9ecef;
+  border-radius: 6px;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+}
+
+/* --- Tab 3: Hình ảnh --- */
+#tab3 .booking-image {
+  max-height: 400px;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
+}
+
+#tab3 .booking-image:hover {
+  transform: scale(1.02);
+}
+
+/* --- Tab 4: Điều khoản & Quy định --- */
+#tab4 .terms-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #555;
+  background-color: #f8f9fa;
+  padding: 16px;
+  border-radius: 10px;
+  border-left: 4px solid #ffc107;
+}
+
+/* --- Tab 5: Đánh giá --- */
+#tab5 .rating-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 24px;
+  font-weight: bold;
+  color: #ffc107;
+}
+
+#tab5 .rating-stars {
+  display: flex;
+  gap: 4px;
+}
+
+#tab5 .star {
+  color: #ffc107;
+  font-size: 26px;
+}
+
+#tab5 .rating-value {
+  font-size: 32px;
+  color: #333;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .tab-content {
+    padding: 15px;
+  }
+
+  #tab3 .booking-image {
+    max-height: 250px;
+  }
+
+  #tab5 .rating-value {
+    font-size: 28px;
+  }
+}

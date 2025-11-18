@@ -1,51 +1,51 @@
 const express = require("express");
 const router = express.Router();
-const { Favorites } = require("../models");
+const { Favorites, Courts } = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddelwares");
 
 router.post("/", validateToken, async (req, res) => {
   const { courtId } = req.body;
   const userId = req.user.id;
   try {
-    const existingFavorite = await Favorites.findOne({
-      where: { userId, courtId },
-    });
-    if (existingFavorite) {
-      await Favorites.destroy({ where: { id: existingFavorite.id } });
-      return res.json({ message: "Removed from favorites", isFavorite: false });
+    const existing = await Favorites.findOne({ where: { userId, courtId } });
+    if (existing) {
+      await existing.destroy();
+      return res.json({ isFavorite: false });
     }
-
-    const favorites = await Favorites.create({ userId, courtId });
-    res.json({ message: "Added to favorites", favorites, isFavorite: true });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error toggling favorite" });
+    await Favorites.create({ userId, courtId });
+    return res.json({ isFavorite: true });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-router.get("/:userId", validateToken, async (req, res) => {
+router.get("/", validateToken, async (req, res) => {
+  const userId = req.user.id;
   try {
     const favorites = await Favorites.findAll({
-      where: { userId: req.params.userId },
+      where: { userId },
+      include: [
+        {
+          model: Courts,
+          as: "Court",
+          attributes: [
+            "id",
+            "courtName",
+            "address",
+            "avatarUrl",
+            "openTime",
+            "closeTime",
+            "phoneNumber",
+            "rating",
+          ],
+        },
+      ],
     });
-    res.json(favorites);
+    const courts = favorites.map((f) => f.Court).filter(Boolean);
+    res.json(courts);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Error fetching favorites" });
-  }
-});
-
-router.delete("/:id", validateToken, async (req, res) => {
-  try {
-    const result = await Favorites.destroy({ where: { id: req.params.id } });
-    if (result) {
-      res.json({ message: "Favorite deleted successfully" });
-    } else {
-      res.status(404).json({ error: "Favorite not found" });
-    }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error deleting favorite" });
+    res.status(500).json({ error: "Không thể lấy danh sách yêu thích" });
   }
 });
 

@@ -1,0 +1,172 @@
+/* Chatbot.css */
+.chatbot-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.chatbot-card {
+  border: none;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  background: #fff;
+}
+
+.chatbot-header {
+  background: linear-gradient(135deg, #1D814B, #2a9d66);
+  color: white;
+  padding: 1rem 1.5rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.chatbot-header h5 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.chatbot-body {
+  height: 400px;
+  overflow-y: auto;
+  padding: 1rem 1.5rem;
+  background: #f8f9fa;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Tin nhắn người dùng */
+.user-message {
+  align-self: flex-end;
+  max-width: 80%;
+}
+
+.user-message .message-bubble {
+  background: #0066FF;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 18px 18px 4px 18px;
+  box-shadow: 0 2px 8px rgba(0, 102, 255, 0.2);
+}
+
+/* Tin nhắn AI */
+.ai-message {
+  align-self: flex-start;
+  max-width: 80%;
+}
+
+.ai-message .message-bubble {
+  background: #FFB300;
+  color: #1a1a1a;
+  padding: 0.75rem 1rem;
+  border-radius: 18px 18px 18px 4px;
+  box-shadow: 0 2px 8px rgba(255, 179, 0, 0.2);
+  font-weight: 500;
+}
+
+/* Chung cho bubble */
+.message-bubble {
+  position: relative;
+  word-wrap: break-word;
+}
+
+.sender-label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.75rem;
+  margin-bottom: 0.25rem;
+  opacity: 0.9;
+}
+
+.user-message .sender-label {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.ai-message .sender-label {
+  color: #d35400;
+}
+
+/* Markdown trong AI */
+.ai-message .message-bubble :global(p) {
+  margin: 0.25rem 0;
+}
+
+.ai-message .message-bubble :global(code) {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.ai-message .message-bubble :global(pre) {
+  background: rgba(0, 0, 0, 0.15);
+  padding: 0.75rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+/* Footer */
+.chatbot-footer {
+  padding: 1rem 1.5rem;
+  background: #f1f3f5;
+  border-top: 1px solid #dee2e6;
+}
+
+.input-formWrapper {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.chat-input {
+  border-radius: 50px;
+  border: 1px solid #ced4da;
+  padding: 0.6rem 1rem;
+  font-size: 0.95rem;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.chat-input:focus {
+  border-color: #0066FF;
+  box-shadow: 0 0 0 0.2rem rgba(0, 102, 255, 0.25);
+}
+
+.send-button {
+  background: #1D814B;
+  border: none;
+  border-radius: 50px;
+  padding: 0.6rem 1.5rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.send-button:hover:not(:disabled) {
+  background: #16633a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(29, 129, 75, 0.3);
+}
+
+.send-button:disabled {
+  background: #aaa;
+  cursor: not-allowed;
+}
+
+/* Scrollbar đẹp */
+.chatbot-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chatbot-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chatbot-body::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.chatbot-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}

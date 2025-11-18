@@ -27,13 +27,22 @@ module.exports = (sequelize, DataTypes) => {
   CourtFields.associate = (models) => {
     CourtFields.belongsTo(models.Courts, {
       foreignKey: "courtId",
+      as: "Court",
       onDelete: "CASCADE",
       onUpdate: "CASCADE",
     });
-    CourtFields.hasOne(models.Schedule, {
+    CourtFields.hasMany(models.Schedule, {
+      // Sửa thành hasMany nếu có nhiều lịch
       foreignKey: "courtFieldId",
       onDelete: "CASCADE",
       onUpdate: "CASCADE",
+    });
+
+    // Nếu bạn có BookingDetail
+    CourtFields.hasMany(models.BookingDetail, {
+      foreignKey: "courtFieldId",
+      as: "Bookings",
+      onDelete: "CASCADE",
     });
   };
 

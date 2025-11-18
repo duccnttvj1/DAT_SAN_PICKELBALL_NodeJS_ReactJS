@@ -1,86 +1,76 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { PayOS } = require("@payos/node");
-const { validateToken } = require("./middlewares/AuthMiddelwares");
-require("dotenv").config();
+const http = require("http");
+const { Server } = require("socket.io");
+const axios = require("axios");
 
-const payos = new PayOS({
-  clientId: process.env.PAYOS_CLIENT_ID,
-  apiKey: process.env.PAYOS_API_KEY,
-  checksumKey: process.env.PAYOS_CHECKSUM_KEY,
-});
+// ROUTES
+const googleRoutes = require("./routes/Google");
+const paymentRouter = require("./routes/payment");
+const paymentHistoryRouter = require("./routes/PaymentHistories");
+const usersRouter = require("./routes/Users");
+const courtsRouter = require("./routes/Courts");
+const courtFieldsRouter = require("./routes/CourtFields");
+const favoritesRouter = require("./routes/Favorites");
+const scheduleRouter = require("./routes/Schedule");
+const bookingDetailRouter = require("./routes/BookingDetail");
 
+// UTILS – CHỈ IMPORT 1 LẦN DUY NHẤT
+const { setIo, autoUnlockPendingSlots } = require("./utils/autoUnlock");
+
+// APP INIT
 const app = express();
 app.use(express.static("public"));
 app.use(express.json());
 app.use(cors());
 
-const YOUR_DOMAIN = "http://localhost:3000";
-app.post("/create-payment-link", validateToken, async (req, res) => {
-  try {
-    const { totalAmount, description, orderCode, returnUrl, cancelUrl } =
-      req.body;
-
-    console.log("=== CREATE PAYMENT LINK DEBUG ===");
-    console.log("Body received:", req.body);
-    console.log("User ID:", req.user?.id);
-
-    // VALIDATE
-    if (!totalAmount || isNaN(totalAmount) || Number(totalAmount) <= 0) {
-      return res.status(400).json({ error: "totalAmount phải là số > 0" });
-    }
-
-    if (!orderCode || isNaN(orderCode)) {
-      return res.status(400).json({ error: "orderCode phải là số nguyên" });
-    }
-
-    const order = {
-      amount: Number(totalAmount), // PayOS yêu cầu `amount`
-      description: description || "Thanh toán sân Pickleball",
-      orderCode: Number(orderCode),
-      returnUrl: returnUrl || `${YOUR_DOMAIN}/success`,
-      cancelUrl: cancelUrl || `${YOUR_DOMAIN}/booking-detail`,
-    };
-
-    console.log("PayOS order sent:", order);
-
-    const paymentLink = await payos.paymentRequests.create(order);
-
-    console.log("PayOS success:", paymentLink.checkoutUrl);
-
-    return res.status(200).json({ checkoutUrl: paymentLink.checkoutUrl });
-  } catch (err) {
-    console.error("=== PAYOS ERROR ===");
-    console.error(err.response?.data || err);
-    return res.status(500).json({ error: "PayOS error" });
-  }
-});
-
-const paymentRouter = require("./routes/payment");
+// ROUTES
 app.use("/payment", paymentRouter);
-
-const db = require("./models");
-
-//Router
-const usersRouter = require("./routes/Users");
+app.use("/google", googleRoutes);
+app.use("/api/payments", paymentHistoryRouter);
 app.use("/users", usersRouter);
-
-const courtsRouter = require("./routes/Courts");
 app.use("/courts", courtsRouter);
-
-const courtFieldsRouter = require("./routes/CourtFields");
 app.use("/courtFields", courtFieldsRouter);
-
-const favoritesRouter = require("./routes/Favorites");
 app.use("/favorites", favoritesRouter);
-
-const scheduleRouter = require("./routes/Schedule");
 app.use("/schedule", scheduleRouter);
-
+app.use("/booking-details", bookingDetailRouter);
 app.use("/uploads", express.static("uploads"));
 
+// SOCKET.IO SETUP
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "http://localhost:3000", credentials: true },
+});
+
+app.set("io", io);
+
+// TRUYỀN IO VÀO UTILS – CHỈ 1 LẦN DUY NHẤT!
+setIo(io);
+
+// KHỞI ĐỘNG AUTO UNLOCK – CHỈ 1 LẦN DUY NHẤT!
+setInterval(autoUnlockPendingSlots, 30_000);
+autoUnlockPendingSlots(); // chạy lần đầu ngay
+console.log("Auto-unlock đã được khởi động (mỗi 30 giây)");
+
+// SOCKET EVENTS – CHỈ 1 LẦN DUY NHẤT!
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+
+  socket.on("join-court-field", (courtFieldId) => {
+    socket.join(`courtField_${courtFieldId}`);
+    console.log(`User ${socket.id} joined courtField_${courtFieldId}`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+  });
+});
+
+// DATABASE & START SERVER
+const db = require("./models");
 db.sequelize.sync({ alter: true }).then(() => {
-  app.listen(3001, () => {
-    console.log("Server is running on port 3001");
+  server.listen(3001, () => {
+    console.log("Server running on http://localhost:3001");
   });
 });

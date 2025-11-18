@@ -47,8 +47,16 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true,
     },
-    ratings: {
+    lat: {
       type: DataTypes.FLOAT,
+      allowNull: true,
+    },
+    lng: {
+      type: DataTypes.FLOAT,
+      allowNull: true,
+    },
+    sportType: {
+      type: DataTypes.STRING,
       allowNull: true,
     },
   });

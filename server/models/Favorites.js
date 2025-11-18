@@ -22,5 +22,14 @@ module.exports = (sequelize, DataTypes) => {
       ],
     }
   );
+
+  // THÊM ASSOCIATE
+  Favorites.associate = (models) => {
+    Favorites.belongsTo(models.Courts, {
+      foreignKey: "courtId",
+      as: "Court", // Alias để include
+    });
+  };
+
   return Favorites;
 };

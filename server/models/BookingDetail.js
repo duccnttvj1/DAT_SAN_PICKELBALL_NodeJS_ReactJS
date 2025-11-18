@@ -20,6 +20,10 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: "SUCCESS",
     },
+    orderCode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
   });
   BookingDetail.associate = (models) => {
     BookingDetail.belongsTo(models.Users, {

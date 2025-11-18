@@ -26,6 +26,16 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false,
     },
+    lockedBy: {
+      type: DataTypes.INTEGER,
+      allowNull: true, // ID user khóa
+      defaultValue: null,
+    },
+    lockedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
   });
 
   Schedule.associate = (models) => {

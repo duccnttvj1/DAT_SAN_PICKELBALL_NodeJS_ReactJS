@@ -9,9 +9,8 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
       },
       orderCode: {
-        type: DataTypes.BIGINT,
+        type: DataTypes.STRING,
         allowNull: false,
-        unique: true,
       },
       userId: {
         type: DataTypes.INTEGER,

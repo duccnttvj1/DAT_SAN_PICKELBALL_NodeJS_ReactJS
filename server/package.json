@@ -12,16 +12,21 @@
   "description": "",
   "dependencies": {
     "@payos/node": "^2.0.3",
+    "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "mysql2": "^3.14.4",
+    "nodemailer": "^7.0.10",
     "nodemon": "^3.1.10",
+    "openai": "^6.9.0",
     "sequelize": "^6.37.7",
     "sequelize-cli": "^6.6.3",
+    "socket.io": "^4.8.1",
     "vnpay": "^2.4.4"
   }
 }

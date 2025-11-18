@@ -1,6 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const { BookingDetail, Users, CourtFields, Schedule } = require("../models");
+const {
+  BookingDetail,
+  Users,
+  CourtFields,
+  Schedule,
+  Courts,
+} = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddelwares");
 
 // Middleware: Chỉ chủ hoặc admin
@@ -120,7 +126,11 @@ router.get("/", validateToken, async (req, res) => {
           model: CourtFields,
           attributes: ["id", "fieldName", "fieldType"],
           include: [
-            { model: require("../models").Courts, attributes: ["courtName"] },
+            {
+              model: require("../models").Courts,
+              as: "Court",
+              attributes: ["courtName"],
+            },
           ],
         },
       ],
@@ -137,6 +147,54 @@ router.get("/", validateToken, async (req, res) => {
   }
 });
 
+// routes/BookingDetail.js
+router.get("/booked-courts", validateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const bookings = await BookingDetail.findAll({
+      where: { userId },
+      attributes: ["courtFieldId"],
+      include: [
+        {
+          model: CourtFields,
+          attributes: ["id", "courtId"],
+          include: [
+            {
+              model: Courts,
+              as: "Court",
+              attributes: [
+                "id",
+                "courtName",
+                "address",
+                "avatarUrl",
+                "openTime",
+                "closeTime",
+                "phoneNumber",
+                "rating",
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const uniqueCourts = bookings
+      .map((b) => b.CourtField?.Court)
+      .filter((court) => court != null)
+      .filter(
+        (court, index, self) =>
+          index === self.findIndex((c) => c.id === court.id)
+      );
+
+    console.log("Sân đã đặt:", uniqueCourts); // Log để kiểm tra
+    res.json(uniqueCourts);
+  } catch (err) {
+    console.error("Lỗi /booked-courts:", err);
+    res.status(500).json({ error: "Lỗi khi lấy thông tin!" });
+  }
+});
+
 // [GET] Chi tiết 1 booking
 router.get("/:id", validateToken, async (req, res) => {
   const { id } = req.params;
@@ -149,7 +207,11 @@ router.get("/:id", validateToken, async (req, res) => {
           model: CourtFields,
           attributes: ["id", "fieldName", "fieldType"],
           include: [
-            { model: require("../models").Courts, attributes: ["courtName"] },
+            {
+              model: require("../models").Courts,
+              as: "Court",
+              attributes: ["courtName"],
+            },
           ],
         },
       ],

@@ -1,0 +1,21 @@
+.td-scroll {
+  max-width: 250px;
+  overflow-x: auto;
+  white-space: nowrap;
+  background: transparent !important; /* rất quan trọng */
+}
+
+/* Scrollbar trong suốt */
+.td-scroll::-webkit-scrollbar {
+  height: 6px;
+  background: transparent;
+}
+
+.td-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.td-scroll::-webkit-scrollbar-thumb {
+  background: rgba(180, 180, 180, 0.6);
+  border-radius: 8px;
+}

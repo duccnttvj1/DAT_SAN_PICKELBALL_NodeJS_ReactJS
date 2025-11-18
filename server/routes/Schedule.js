@@ -79,7 +79,7 @@ router.get("/:courtFieldId/:date", async (req, res) => {
     // Attach computed price to each schedule's plain object representation
     const result = schedules.map((s) => {
       const plain = s.get ? s.get({ plain: true }) : { ...s };
-
+      plain.lockedBy = s.lockedBy;
       const stored = plain.price;
       const storedNum = Number(stored);
 
@@ -195,6 +195,75 @@ router.post("/booking", validateToken, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Lỗi server" });
+  }
+});
+
+// === LOCK SLOT ===
+// routes/schedule.js – route POST /lock
+router.post("/lock", validateToken, async (req, res) => {
+  const { scheduleId } = req.body;
+  const userId = req.user.id;
+
+  const t = await db.sequelize.transaction();
+  try {
+    const slot = await Schedule.findByPk(scheduleId, { transaction: t });
+
+    if (!slot || slot.state !== "available") {
+      await t.rollback();
+      return res.status(409).json({ error: "Khung giờ không khả dụng" });
+    }
+
+    // Lock slot
+    slot.state = "pending";
+    slot.lockedBy = userId;
+    slot.lockedAt = new Date();
+    await slot.save({ transaction: t });
+    await t.commit();
+
+    // QUAN TRỌNG: Emit realtime cho tất cả người dùng đang xem sân này
+    const io = req.app.get("io"); // Lấy io từ app
+    io.to(`courtField_${slot.courtFieldId}`).emit("slot-locked", {
+      scheduleId: slot.id,
+      userId,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    await t.rollback();
+    res.status(500).json({ error: "Lock thất bại" });
+  }
+});
+
+// === UNLOCK SLOT ===
+router.post("/unlock", validateToken, async (req, res) => {
+  const { scheduleId } = req.body;
+  const userId = req.user.id;
+
+  const t = await db.sequelize.transaction();
+  try {
+    const slot = await Schedule.findByPk(scheduleId, { transaction: t });
+
+    if (!slot || slot.lockedBy !== userId) {
+      await t.rollback();
+      return res.status(403).json({ error: "Không có quyền" });
+    }
+
+    slot.state = "available";
+    slot.lockedBy = null;
+    slot.lockedAt = null;
+    await slot.save({ transaction: t });
+    await t.commit();
+
+    // Emit unlock realtime
+    const io = req.app.get("io");
+    io.to(`courtField_${slot.courtFieldId}`).emit("slot-unlocked", {
+      scheduleId: slot.id,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    await t.rollback();
+    res.status(500).json({ error: "Unlock thất bại" });
   }
 });
 

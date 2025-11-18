@@ -17,7 +17,7 @@ const insertCourtFields = async () => {
         fieldName: "Sân A",
         fieldType: "Sân 5",
         courtId: court.id,
-        pricePerMorning: 200000,
+        pricePerMorning: 2000,
         pricePerLunch: 150000,
         pricePerAfternoon: 300000,
       },

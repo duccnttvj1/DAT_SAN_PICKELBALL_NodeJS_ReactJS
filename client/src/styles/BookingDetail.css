@@ -75,3 +75,14 @@ a{
 @media (max-width: 768px){
     .booking-image{max-height:120px}
 }
+
+/* Làm cho option mặc định trông như placeholder */
+select option[value=""] {
+  color: #999 !important;
+  font-style: italic;
+}
+
+/* Khi đã chọn mã → option mặc định vẫn xám, các mã khác đen */
+select option:not([value=""]) {
+  color: black;
+}

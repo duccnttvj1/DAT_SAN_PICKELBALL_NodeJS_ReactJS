@@ -19,9 +19,13 @@ function Chatbot() {
     setLoading(true);
 
     try {
-      const res = await axios.post("http://localhost:3001/api/chat", {
-        message: input,
-      });
+      const res = await axios.post("http://localhost:3001/chatbot", {
+        message: input
+      }, {
+    headers: {
+      accessToken: localStorage.getItem("accessToken") || "",
+    },
+  });
 
       const botMsg = { role: "assistant", content: res.data.reply };
       setMessages((prev) => [...prev, botMsg]);

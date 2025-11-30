@@ -51,10 +51,22 @@ function AppNavbar({ authState, logout }) {
                   Quản lý sân
                 </Link>
                 <Link
-                  to="/confirmPayments"
+                  to="/manageBookings"
                   className="nav-link-hover text-white mx-2 text-decoration-none fw-medium"
                 >
-                  Xác nhận thanh toán
+                  Quản lý đặt sân
+                </Link>
+                <Link
+                  to="/managePayments"
+                  className="nav-link-hover text-white mx-2 text-decoration-none fw-medium"
+                >
+                  Quản lý thanh toán
+                </Link>
+                <Link
+                  to="/manageCoupons"
+                  className="nav-link-hover text-white mx-2 text-decoration-none fw-medium"
+                >
+                  Quản lý mã giảm giá
                 </Link>
               </>
             )}

@@ -10,6 +10,7 @@ function PaymentWaiting() {
   const [seconds, setSeconds] = useState(5 * 60);
   const [paymentInfo, setPaymentInfo] = useState(null);
   const [error, setError] = useState(null);
+  const [courtId, setCourtId] = useState(null);
 
   useEffect(() => {
     console.log("[PAYMENT WAITING] Load info for orderCode:", orderCode); // DEBUG 1
@@ -34,6 +35,25 @@ function PaymentWaiting() {
   }, [orderCode]);
 
   useEffect(() => {
+    axios
+      .get(`http://localhost:3001/payment/info/${orderCode}`, {
+        headers: {
+          accessToken: localStorage.getItem("accessToken"),
+        },
+      })
+      .then((res) => {
+        setPaymentInfo(res.data);
+        // Lấy courtId từ response (bắt buộc backend phải trả về)
+        if (res.data.courtId) {
+          setCourtId(res.data.courtId);
+        }
+      })
+      .catch((err) => {
+        setError("Không tải được thông tin thanh toán.");
+      });
+  }, [orderCode]);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       setSeconds((s) => {
         if (s <= 1) {
@@ -41,7 +61,7 @@ function PaymentWaiting() {
           alert(
             "Đã hết thời gian thanh toán! Các khung giờ đã được giải phóng."
           );
-          navigate(`/booking-detail/${courtId}`); // Thay courtId nếu có
+          navigate(`/bookingDetail/${courtId}`); // Thay courtId nếu có
           return 0;
         }
         return s - 1;

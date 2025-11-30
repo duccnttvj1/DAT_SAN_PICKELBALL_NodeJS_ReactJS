@@ -22,17 +22,59 @@ function CourtDetail() {
   // Trong CourtDetail.js
   const [fieldTypes, setFieldTypes] = useState([]);
 
+  const [backgroundUrl, setBackgroundUrl] = useState("/sanco.png");
+
   useEffect(() => {
     axios.get(`http://localhost:3001/courts/byId/${id}`).then((response) => {
       setCourtDetail(response.data);
       setCourtFields(response.data.CourtFields || []); // LẤY DANH SÁCH SÂN CON
       console.log(courtFields);
 
-      const saved = localStorage.getItem("courtAvatar_" + id);
-      const apiUrl = response.data.avatarUrl;
-      setAvatarCourtUrl(saved || apiUrl || "/icon_pickelball.png");
+      // Avatar
+      const savedAvatar = localStorage.getItem("courtAvatar_" + id);
+      setAvatarCourtUrl(
+        savedAvatar || response.data.avatarUrl || "/icon_pickelball.png"
+      );
+
+      // Background - mới thêm
+      const savedBg = localStorage.getItem("courtBackground_" + id);
+      setBackgroundUrl(savedBg || response.data.backgroundUrl || "/sanco.png");
     });
   }, [id]);
+
+  // Thêm ref cho ảnh nền
+  const fileInputBgRef = useRef(null);
+
+  // Hàm xử lý upload ảnh nền
+  const handleBgFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("background", file); // tên field là "background" (sẽ xử lý ở backend)
+
+    try {
+      const res = await axios.post(
+        `http://localhost:3001/courts/${id}/background`,
+        formData,
+        {
+          headers: {
+            accessToken: localStorage.getItem("accessToken"),
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      const newBgUrl = res.data.backgroundUrl;
+      setBackgroundUrl(newBgUrl);
+      localStorage.setItem("courtBackground_" + id, newBgUrl);
+      alert("Cập nhật ảnh nền thành công!");
+    } catch (err) {
+      alert(
+        "Lỗi upload ảnh nền: " + (err.response?.data?.error || err.message)
+      );
+    }
+  };
 
   const fileInputRef = useRef(null);
 
@@ -77,17 +119,42 @@ function CourtDetail() {
 
   return (
     <div className="fixed top-0 right-0 h-full w-1/2 bg-white shadow-lg z-50 p-4 overflow-auto">
+      {/* ==================== THAY THẾ TOÀN BỘ PHẦN NÀY ==================== */}
       <div
         className="card-img-top position-relative"
         style={{
-          backgroundImage: `url('/sanco.png')`,
+          backgroundImage: `url(${backgroundUrl})`,
           height: "200px",
           width: "100%",
           backgroundSize: "cover",
           backgroundRepeat: "no-repeat",
-          backgroundPosition: "center bottom",
+          backgroundPosition: "center",
+          position: "relative",
         }}
       >
+        {/* Nút camera cho ảnh nền - chỉ admin thấy */}
+        {authState.role === "admin" && (
+          <div
+            className="position-absolute bg-primary text-white rounded-circle d-flex align-items-center justify-content-center shadow"
+            style={{
+              width: "40px",
+              height: "40px",
+              bottom: "12px",
+              right: "12px",
+              cursor: "pointer",
+              fontSize: "18px",
+              zIndex: 10,
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputBgRef.current?.click();
+            }}
+          >
+            <i className="bi bi-camera-fill"></i>
+          </div>
+        )}
+
+        {/* Các nút cũ giữ nguyên */}
         <div className="position-absolute top-0 start-0 m-2">
           <button
             className="border-2 rounded-1 bg-transparent text-warning fw-bold fs-5 px-3 py-2 mt-2 hover-button"
@@ -113,6 +180,16 @@ function CourtDetail() {
           Đặt lịch
         </button>
       </div>
+
+      {/* Input file ẩn cho ảnh nền */}
+      <input
+        type="file"
+        ref={fileInputBgRef}
+        accept="image/*"
+        onChange={handleBgFileChange}
+        style={{ display: "none" }}
+      />
+      {/* ================================================================== */}
       <div className="card-body d-flex flex-column align-items-start mt-4 infoCourt">
         <div className="d-flex">
           <div className="position-relative d-inline-block">

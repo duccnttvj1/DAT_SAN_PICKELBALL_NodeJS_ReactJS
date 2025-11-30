@@ -27,6 +27,9 @@ import "bootstrap-icons/font/bootstrap-icons.css";
 import "./App.css";
 import CancelHandler from "./components/CanceHandler";
 import PaymentWaiting from "./pages/PaymentWaiting";
+import ManageCoupons from "./pages/ManageCoupons";
+import BookingsManagement from "./pages/BookingsManagement";
+import PaymentManagement from "./pages/PaymentManagement";
 
 function App() {
   const [authState, setAuthState] = useState({
@@ -82,7 +85,12 @@ function App() {
 }
 
 function AppContent({ authState, logout }) {
-  const noNavbarPages = ["/profile", "/bookingDetail/:courtId"];
+  const noNavbarPages = [
+    "/profile",
+    "/bookingDetail/:courtId",
+    "/chatbot",
+    "/payment/cancel",
+  ];
   const location = useLocation();
 
   const hideNavbar = noNavbarPages.some((pattern) =>
@@ -108,14 +116,17 @@ function AppContent({ authState, logout }) {
         />
         <Route path="/payment/:courtId" element={<Payment />} />
         <Route path="/manageCourt" element={<ManageCourts />} />
-        <Route path="/success" element={<SuccessPage />} />
+        <Route path="/payment-success" element={<SuccessPage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/chatbot" element={<Chatbot />} />
-        <Route path="/payment/cancel" element={<Chatbot />} />
+        <Route path="/payment-cancel" element={<PaymentCancel />} />
         <Route
           path="/payment-waiting/:orderCode"
           element={<PaymentWaiting />}
         />
+        <Route path="/manageCoupons" element={<ManageCoupons />} />
+        <Route path="/manageBookings" element={<BookingsManagement />} />
+        <Route path="/managePayments" element={<PaymentManagement />} />
       </Routes>
     </div>
   );

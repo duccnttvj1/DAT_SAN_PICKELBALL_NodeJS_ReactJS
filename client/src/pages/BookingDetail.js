@@ -15,17 +15,22 @@ function BookingDetail() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
+  const [couponCode, setCouponCode] = useState("");
   const [courtInfo, setCourtInfo] = useState({ CourtFields: [], image: "" });
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFieldId, setSelectedFieldId] = useState(null);
   const [selectedFieldName, setSelectedFieldName] = useState("");
   const [dates, setDates] = useState([]);
-  const [slotsMap, setSlotsMap] = useState({}); // { '2025-11-07': { '05:00': slotObj, ... }, ... }
-  const [timeRows, setTimeRows] = useState([]); // list of time strings
+  const [slotsMap, setSlotsMap] = useState({});
+  const [timeRows, setTimeRows] = useState([]);
   const [selectedSlots, setSelectedSlots] = useState([]);
+  const [slotTimers, setSlotTimers] = useState({});
   const location = useLocation();
   const [refreshKey, setRefreshKey] = useState(0);
-  const [slotTimers, setSlotTimers] = useState({});
+  const [availableCoupons, setAvailableCoupons] = useState([]);
+  const [selectedCoupon, setSelectedCoupon] = useState("");
+  const hasShownSuccessAlert = useRef(false);
+  const socketRef = useRef(null);
 
   useEffect(() => {
     console.log("useEffect auth - authState:", authState);
@@ -60,39 +65,27 @@ function BookingDetail() {
 
   useEffect(() => {
     if (courtId) {
-      axios
-        .get(`http://localhost:3001/courts/byId/${courtId}`)
-        .then((res) => {
-          // debug log to inspect what the API returns for image
-          console.log("GET /courts/byId response:", res.data);
-
-          setCourtInfo({
-            courtName: res.data.courtName,
-            address: res.data.address,
-            // try common image fields from API (image or avatarUrl)
-            image: res.data.image || res.data.avatarUrl || "",
-            CourtFields: res.data.CourtFields || [],
-          });
-        })
-        .catch((err) => {
-          console.log(err);
+      axios.get(`http://localhost:3001/courts/byId/${courtId}`).then((res) => {
+        setCourtInfo({
+          courtName: res.data.courtName,
+          address: res.data.address,
+          image: res.data.image || res.data.avatarUrl || "",
+          CourtFields: res.data.CourtFields || [],
         });
+      });
     }
   }, [courtId]);
 
-  // prepare 7 dates starting from today
   useEffect(() => {
     const ds = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
-      const iso = d.toISOString().split("T")[0];
-      ds.push(iso);
+      ds.push(d.toISOString().split("T")[0]);
     }
     setDates(ds);
   }, []);
 
-  // when a small field is selected, fetch schedules for the 7 dates
   useEffect(() => {
     const fetchForField = async () => {
       if (!selectedFieldId) return;
@@ -107,25 +100,13 @@ function BookingDetail() {
           const date = dates[idx];
           map[date] = {};
           resp.data.forEach((slot) => {
-            // normalize price/amount field coming from server -> use slot.price
-            const rawPrice =
-              slot.price ?? slot.amount ?? slot.Amount ?? slot.AmountValue;
-            const normalizedPrice = rawPrice != null ? Number(rawPrice) : 0;
-            // ensure numeric
-            slot.price =
-              typeof normalizedPrice === "number"
-                ? normalizedPrice
-                : Number(normalizedPrice) || 0;
-
-            // Ensure state comes from DB; default to 'available' if missing
-            slot.state = slot.state ?? "available";
-
+            slot.price = Number(slot.price || slot.amount || 0);
+            slot.state = slot.state || "available";
             map[date][slot.startTime] = slot;
             timesSet.add(slot.startTime);
           });
         });
-        // build sorted timeRows from earliest to latest
-        const times = Array.from(timesSet).sort((a, b) => (a > b ? 1 : -1));
+        const times = Array.from(timesSet).sort();
         setSlotsMap(map);
         setTimeRows(times);
       } catch (error) {
@@ -135,104 +116,10 @@ function BookingDetail() {
     fetchForField();
   }, [selectedFieldId, dates, refreshKey]);
 
-  // If navigated back from Payment with a preselectFieldId, set it so BookingDetail shows that field
-  const hasShownSuccessAlert = useRef(false); // Thêm dòng này ngoài useEffect
-
-  useEffect(() => {
-    if (!location) return;
-
-    const preselectFieldId = location.state?.preselectFieldId;
-    const justBookedScheduleIds = location.state?.justBookedScheduleIds;
-    const params = new URLSearchParams(location.search);
-    const status = params.get("status");
-
-    if (preselectFieldId) {
-      if (selectedFieldId && selectedFieldId === preselectFieldId) {
-        setRefreshKey((k) => k + 1);
-      } else {
-        setSelectedFieldId(preselectFieldId);
-      }
-      setSelectedSlots([]);
-
-      // CHỈ ALERT 1 LẦN
-      if (
-        justBookedScheduleIds &&
-        justBookedScheduleIds.length > 0 &&
-        !hasShownSuccessAlert.current
-      ) {
-        hasShownSuccessAlert.current = true; // Đánh dấu đã hiện
-        alert("Thanh toán thành công — khung giờ đã được giữ.");
-
-        // Xóa state để tránh hiện lại
-        navigate(location.pathname, { replace: true, state: {} });
-      }
-    }
-  }, [location, courtId, navigate, selectedFieldId]);
-
-  // useEffect(() => {
-  //   const updateTimers = () => {
-  //     const now = Date.now();
-
-  //     setSlotTimers((prev) => {
-  //       const next = { ...prev };
-  //       let hasChange = false;
-
-  //       Object.keys(next).forEach((scheduleId) => {
-  //         const endTime = next[scheduleId]; // timestamp (ms)
-  //         const remainingSeconds = Math.max(
-  //           0,
-  //           Math.floor((endTime - now) / 1000)
-  //         );
-
-  //         if (remainingSeconds <= 0) {
-  //           delete next[scheduleId];
-  //           hasChange = true;
-  //         } else if (next[scheduleId] !== remainingSeconds) {
-  //           next[scheduleId] = remainingSeconds; // cập nhật số giây còn lại
-  //           hasChange = true;
-  //         }
-  //       });
-
-  //       return hasChange ? next : prev;
-  //     });
-  //   };
-
-  //   updateTimers(); // chạy ngay lần đầu
-  //   const intervalId = setInterval(updateTimers, 1000); // 1 giây 1 lần
-
-  //   return () => clearInterval(intervalId);
-  // }, []);
-  // THAY BẰNG ĐOẠN NÀY – HOÀN HẢO, MƯỢT, KHÔNG BAO GIỜ LỖI!
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSlotTimers((prev) => {
-        const next = { ...prev };
-        let hasChange = false;
-
-        Object.keys(next).forEach((id) => {
-          if (next[id] > 0) {
-            next[id] -= 1;
-            hasChange = true;
-          } else {
-            delete next[id];
-            hasChange = true;
-          }
-        });
-
-        return hasChange ? next : prev;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []); // chỉ chạy 1 lần
-
-  // ==================== SOCKET.IO HOÀN HẢO – CHỈ DÁN 1 LẦN DUY NHẤT ====================
-  const socketRef = useRef(null);
-
+  // Socket.io realtime
   useEffect(() => {
     if (!selectedFieldId) return;
 
-    // Ngắt kết nối cũ (nếu có)
     if (socketRef.current) {
       socketRef.current.off("slot-locked");
       socketRef.current.off("slot-unlocked");
@@ -244,28 +131,19 @@ function BookingDetail() {
       withCredentials: true,
       extraHeaders: { Authorization: `Bearer ${token}` },
     });
-
-    // QUAN TRỌNG: GÁN VÀO REF NGAY
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      console.log("Socket connected & joined:", selectedFieldId);
       socket.emit("join-court-field", selectedFieldId);
     });
 
-    // DÙNG socketRef.current ĐỂ LISTENER KHÔNG BỊ MẤT
-    socketRef.current.on("slot-locked", ({ scheduleId, userId }) => {
-      console.log("Received slot-locked:", scheduleId, "by user:", userId);
-
+    socket.on("slot-locked", ({ scheduleId }) => {
       setSlotsMap((prev) => {
         const newMap = JSON.parse(JSON.stringify(prev));
-        Object.keys(newMap).forEach((date) => {
-          Object.keys(newMap[date]).forEach((time) => {
-            const slot = newMap[date][time];
-            if (slot?.id === scheduleId) {
-              slot.state = "pending";
-              slot.lockedBy = userId;
-              slot.lockedAt = new Date();
+        Object.keys(newMap).forEach((d) => {
+          Object.keys(newMap[d]).forEach((t) => {
+            if (newMap[d][t]?.id === scheduleId) {
+              newMap[d][t].state = "pending";
             }
           });
         });
@@ -273,46 +151,81 @@ function BookingDetail() {
       });
     });
 
-    socketRef.current.on("slot-unlocked", ({ scheduleId }) => {
-      console.log("Received slot-unlocked:", scheduleId);
-
+    socket.on("slot-unlocked", ({ scheduleId }) => {
       setSlotsMap((prev) => {
         const newMap = JSON.parse(JSON.stringify(prev));
-        Object.keys(newMap).forEach((date) => {
-          Object.keys(newMap[date]).forEach((time) => {
-            const slot = newMap[date][time];
-            if (slot?.id === scheduleId) {
-              slot.state = "available";
-              slot.lockedBy = null;
-              slot.lockedAt = null;
+        Object.keys(newMap).forEach((d) => {
+          Object.keys(newMap[d]).forEach((t) => {
+            if (newMap[d][t]?.id === scheduleId) {
+              newMap[d][t].state = "available";
+              newMap[d][t].lockedBy = null;
             }
           });
         });
         return newMap;
       });
-
       setSlotTimers((prev) => {
-        const next = { ...prev };
-        delete next[scheduleId];
-        return next;
+        const n = { ...prev };
+        delete n[scheduleId];
+        return n;
       });
-
-      setSelectedSlots((prev) =>
-        prev.filter((s) => s.scheduleId !== scheduleId)
-      );
     });
 
     return () => {
       if (socketRef.current) {
-        socketRef.current.off("slot-locked");
-        socketRef.current.off("slot-unlocked");
         socketRef.current.disconnect();
         socketRef.current = null;
       }
     };
   }, [selectedFieldId]);
-  // ================================================================================
 
+  // Countdown timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSlotTimers((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach((id) => {
+          if (next[id] > 0) {
+            next[id] -= 1;
+            changed = true;
+          } else {
+            delete next[id];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedFieldId) {
+      setAvailableCoupons([]);
+      setSelectedCoupon("");
+      return;
+    }
+
+    // Lấy courtId từ CourtFields
+    const field = courtInfo.CourtFields.find((f) => f.id === selectedFieldId);
+    if (!field?.courtId) return;
+
+    axios
+      .get(`http://localhost:3001/coupons/by-court/${field.courtId}`, {
+        headers: { accessToken: localStorage.getItem("accessToken") },
+      })
+      .then((res) => {
+        setAvailableCoupons(res.data);
+        setSelectedCoupon(""); // reset khi đổi sân
+      })
+      .catch((err) => {
+        console.error("Lỗi lấy mã giảm giá:", err);
+        setAvailableCoupons([]);
+      });
+  }, [selectedFieldId, courtInfo.CourtFields]);
+
+  // ==================== HANDLE SLOT CLICK – DÙNG BULK LOCK/UNLOCK ====================
   const handleSlotClick = async (date, startTime) => {
     const slot = slotsMap[date]?.[startTime];
     if (!slot) return;
@@ -322,73 +235,62 @@ function BookingDetail() {
 
     try {
       if (isSelected) {
-        // HỦY CHỌN
+        // BỎ CHỌN → UNLOCK BULK
         await axios.post(
-          "/schedule/unlock",
-          { scheduleId: slot.id },
-          {
-            headers: { accessToken: localStorage.getItem("accessToken") },
-          }
+          "http://localhost:3001/schedule/unlock-bulk",
+          { scheduleIds: [slot.id] },
+          { headers: { accessToken: localStorage.getItem("accessToken") } }
         );
 
         setSelectedSlots((prev) => prev.filter((s) => s.key !== key));
         setSlotTimers((prev) => {
-          const next = { ...prev };
-          delete next[slot.id];
-          return next;
+          const n = { ...prev };
+          delete n[slot.id];
+          return n;
         });
 
-        // CẬP NHẬT UI NGAY CHO USER 1 (không chờ socket)
+        // Update UI ngay
         setSlotsMap((prev) => {
-          const newMap = JSON.parse(JSON.stringify(prev));
-          if (newMap[date]?.[startTime]) {
-            newMap[date][startTime].state = "available";
-            newMap[date][startTime].lockedBy = null;
-            newMap[date][startTime].lockedAt = null;
+          const n = JSON.parse(JSON.stringify(prev));
+          if (n[date]?.[startTime]) {
+            n[date][startTime].state = "available";
+            n[date][startTime].lockedBy = null;
           }
-          return newMap;
+          return n;
         });
       } else {
+        // CHỌN → LOCK BULK
         if (slot.state !== "available") {
-          alert("Khung giờ đã được đặt hoặc đang được người khác giữ!");
+          alert("Khung giờ đã bị giữ hoặc đặt rồi!");
           return;
         }
 
         const res = await axios.post(
-          "http://localhost:3001/schedule/lock",
-          { scheduleId: slot.id },
-          {
-            headers: { accessToken: localStorage.getItem("accessToken") },
-          }
+          "http://localhost:3001/schedule/lock-bulk",
+          { scheduleIds: [slot.id] },
+          { headers: { accessToken: localStorage.getItem("accessToken") } }
         );
 
         if (res.data.success) {
-          // CẬP NHẬT UI NGAY CHO USER 1
           setSlotsMap((prev) => {
-            const newMap = JSON.parse(JSON.stringify(prev));
-            if (newMap[date]?.[startTime]) {
-              newMap[date][startTime].state = "pending";
-              newMap[date][startTime].lockedBy = authState.id;
-              newMap[date][startTime].lockedAt = new Date();
+            const n = JSON.parse(JSON.stringify(prev));
+            if (n[date]?.[startTime]) {
+              n[date][startTime].state = "pending";
+              n[date][startTime].lockedBy = authState.id;
             }
-            return newMap;
+            return n;
           });
 
-          // Bắt đầu countdown
-          setSlotTimers((prev) => ({
-            ...prev,
-            [slot.id]: 300, // chính xác 5 phút
-          }));
+          setSlotTimers((prev) => ({ ...prev, [slot.id]: 300 }));
 
-          // Thêm vào giỏ hàng – ĐÃ SỬA DẤU || THỪA
           setSelectedSlots((prev) => [
             ...prev,
             {
               key,
               date,
-              startTime: slot.startTime || startTime,
-              endTime: slot.endTime || "??:??",
-              price: slot.price || slot.Amount || 0,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+              price: slot.price,
               fieldId: selectedFieldId,
               fieldName: selectedFieldName,
               scheduleId: slot.id,
@@ -397,46 +299,28 @@ function BookingDetail() {
         }
       }
     } catch (err) {
-      const errorMsg = err.response?.data?.error || "Lỗi thao tác";
-      if (err.response?.status === 403 && isSelected) {
-        alert("Khung giờ đã hết hạn giữ chỗ và được tự động hủy.");
-        setSelectedSlots((prev) => prev.filter((s) => s.key !== key));
-        setSlotTimers((prev) => {
-          const next = { ...prev };
-          delete next[slot.id];
-          return next;
-        });
-      } else {
-        alert(errorMsg);
-        if (err.response?.status === 409) {
-          setRefreshKey((k) => k + 1);
-        }
+      const msg = err.response?.data?.error || "Lỗi thao tác slot";
+      alert(msg);
+      if (err.response?.status === 409) {
+        setRefreshKey((k) => k + 1);
       }
     }
   };
 
-  const totalAmount = selectedSlots.reduce(
+  // Tính tổng tiền
+  const subtotalAmount = selectedSlots.reduce(
     (sum, s) => sum + Number(s.price || 0),
     0
   );
+  const totalAmount = subtotalAmount; // server sẽ tính giảm giá
 
-  console.log("totalAmount tính được:", totalAmount, typeof totalAmount);
-
+  // Xác nhận thanh toán
   const handleConfirm = async () => {
-    if (selectedSlots.length === 0) {
-      alert("Vui lòng chọn ít nhất 1 khung giờ!");
-      return;
-    }
-
-    if (totalAmount <= 0) {
-      alert("Tổng tiền phải lớn hơn 0!");
-      return;
-    }
+    if (selectedSlots.length === 0) return alert("Chọn ít nhất 1 khung giờ!");
+    if (subtotalAmount <= 0) return alert("Tổng tiền phải > 0!");
 
     setIsLoading(true);
-
     try {
-      // 1. Tạo temp order
       const tempRes = await axios.post(
         "http://localhost:3001/payment/temp-order",
         {
@@ -452,47 +336,30 @@ function BookingDetail() {
           phone,
           note,
           courtFieldId: selectedFieldId,
-          totalAmount,
+          totalAmount: subtotalAmount,
+          couponId: selectedCoupon ? Number(selectedCoupon) : null,
         },
-        {
-          headers: { accessToken: localStorage.getItem("accessToken") },
-        }
+        { headers: { accessToken: localStorage.getItem("accessToken") } }
       );
 
-      const orderCode = tempRes.data.orderCode;
+      const finalAmount = tempRes.data.finalAmount || subtotalAmount;
+      const discountAmount = tempRes.data.discountAmount || 0;
 
-      // 2. Tạo link PayOS
+      const { orderCode } = tempRes.data;
       const payRes = await axios.post(
         "http://localhost:3001/payment/create-payment-link",
         { orderCode },
-        {
-          headers: { accessToken: localStorage.getItem("accessToken") },
-        }
+        { headers: { accessToken: localStorage.getItem("accessToken") } }
       );
 
-      const { checkoutUrl, qrCode } = payRes.data;
-
-      if (!checkoutUrl) {
-        throw new Error("Không nhận được link thanh toán từ server");
-      }
-
-      // 3. CHUYỂN HƯỚNG NGAY TRÊN CÙNG TAB (mượt nhất, không lỗi)
-      alert(
-        `Đang chuyển đến trang thanh toán PayOS...\nSố tiền: ${totalAmount.toLocaleString(
-          "vi-VN"
-        )}đ\nVui lòng hoàn tất trong 15 phút!`
-      );
-      window.location.href = checkoutUrl;
-
-      // Optional: Log QR nếu có
-      if (qrCode) {
-        console.log("QR Code (base64):", qrCode);
-        // Có thể hiện modal QR ở đây nếu muốn
+      if (payRes.data.checkoutUrl) {
+        alert(
+          `Đã áp dụng mã giảm giá!\nGiảm: ${discountAmount.toLocaleString()}đ\nThanh toán: ${finalAmount.toLocaleString()}đ`
+        );
+        window.location.href = payRes.data.checkoutUrl;
       }
     } catch (err) {
-      console.error("Lỗi thanh toán:", err);
-      const msg = err.response?.data?.error || err.message || "Lỗi hệ thống";
-      alert("Thanh toán thất bại: " + msg);
+      alert(err.response?.data?.error || "Thanh toán thất bại");
     } finally {
       setIsLoading(false);
     }
@@ -649,7 +516,17 @@ function BookingDetail() {
                 Số khung giờ đã chọn: <strong>{selectedSlots.length}</strong>
               </div>
               <div className="mb-2">
-                Tổng tiền:{" "}
+                Tổng tiền (chưa giảm):{" "}
+                <strong className="text-white">
+                  {subtotalAmount.toLocaleString("vi-VN")}đ
+                </strong>
+              </div>
+              {/* TODO: Khi có phản hồi từ server, hiển thị dòng giảm giá ở đây */}
+              {/* <div className="mb-2 text-success">
+                Giảm giá: <strong>-{discountAmount.toLocaleString("vi-VN")}đ</strong>
+              </div> */}
+              <div className="mb-2">
+                Tổng thanh toán:{" "}
                 <strong className="text-warning">
                   {totalAmount.toLocaleString("vi-VN")}đ
                 </strong>
@@ -814,6 +691,45 @@ function BookingDetail() {
           className="w-100 rounded-2 border-0 py-4 ps-3 fs-5"
           placeholder="Nhập ghi chú"
         />
+      </div>
+      {/* THAY THẾ HOÀN TOÀN phần ô nhập mã bằng đoạn này */}
+      <div className="mx-3 mt-4">
+        <label
+          className="text-white fs-4 pb-2"
+          style={{ textTransform: "uppercase", fontWeight: "600" }}
+        >
+          Mã khuyến mãi
+        </label>
+
+        {availableCoupons.length > 0 ? (
+          <select
+            className="w-100 rounded-2 border-0 py-4 ps-3 fs-5 form-select"
+            value={selectedCoupon}
+            onChange={(e) => setSelectedCoupon(e.target.value)}
+            style={{ color: selectedCoupon ? "black" : "#888" }} // khi chọn mã → đen, chưa chọn → xám
+          >
+            {/* OPTION MẶC ĐỊNH – GIỮ NGUYÊN, CÓ THỂ CHỌN LẠI */}
+            <option value="">— Không dùng mã giảm giá —</option>
+
+            {availableCoupons.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.displayText}{" "}
+                {c.remainingUsage < Infinity &&
+                  `(Còn ${c.remainingUsage} lượt)`}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="w-100 rounded-2 border-0 py-4 ps-3 fs-5 bg-secondary text-white">
+            Không có mã khuyến mãi nào cho sân này
+          </div>
+        )}
+
+        <p className="text-light mt-2 small">
+          {availableCoupons.length > 0
+            ? "Chọn mã để được giảm giá ngay!"
+            : "Sân này chưa có chương trình khuyến mãi"}
+        </p>
       </div>
       <div
         className="mx-3 mt-4 rounded-2 text-white"

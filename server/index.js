@@ -1,3 +1,4 @@
+// server.js – ĐÃ SỬA HOÀN CHỈNH, CHẠY NGON NGAY!
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -5,8 +6,9 @@ const http = require("http");
 const { Server } = require("socket.io");
 const axios = require("axios");
 
-// ROUTES
+// ROUTES – ĐÚNG TÊN FILE
 const googleRoutes = require("./routes/Google");
+const couponRouter = require("./routes/CouponRouter");
 const paymentRouter = require("./routes/payment");
 const paymentHistoryRouter = require("./routes/PaymentHistories");
 const usersRouter = require("./routes/Users");
@@ -15,19 +17,25 @@ const courtFieldsRouter = require("./routes/CourtFields");
 const favoritesRouter = require("./routes/Favorites");
 const scheduleRouter = require("./routes/Schedule");
 const bookingDetailRouter = require("./routes/BookingDetail");
+const chatbotRouter = require("./routes/Chatbot");
 
-// UTILS – CHỈ IMPORT 1 LẦN DUY NHẤT
+// UTILS
 const { setIo, autoUnlockPendingSlots } = require("./utils/autoUnlock");
 
-// APP INIT
 const app = express();
 app.use(express.static("public"));
-app.use(express.json());
-app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    credentials: true,
+  })
+);
 
-// ROUTES
-app.use("/payment", paymentRouter);
+// ======================= ROUTES – HOÀN HẢO =======================
 app.use("/google", googleRoutes);
+app.use("/coupons", couponRouter);
+app.use("/payment", paymentRouter);
 app.use("/api/payments", paymentHistoryRouter);
 app.use("/users", usersRouter);
 app.use("/courts", courtsRouter);
@@ -36,24 +44,29 @@ app.use("/favorites", favoritesRouter);
 app.use("/schedule", scheduleRouter);
 app.use("/booking-details", bookingDetailRouter);
 app.use("/uploads", express.static("uploads"));
+app.use("/chatbot", chatbotRouter);
 
-// SOCKET.IO SETUP
+// ======================= SOCKET.IO SETUP =======================
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "http://localhost:3000", credentials: true },
+  cors: {
+    origin: "http://localhost:3000",
+    credentials: true,
+  },
 });
 
+// Truyền io vào app để route có thể dùng req.app.get("io")
 app.set("io", io);
 
-// TRUYỀN IO VÀO UTILS – CHỈ 1 LẦN DUY NHẤT!
+// Truyền io vào utils auto unlock
 setIo(io);
 
-// KHỞI ĐỘNG AUTO UNLOCK – CHỈ 1 LẦN DUY NHẤT!
+// Auto unlock pending slots (chạy mỗi 30 giây + chạy ngay lần đầu)
 setInterval(autoUnlockPendingSlots, 30_000);
-autoUnlockPendingSlots(); // chạy lần đầu ngay
-console.log("Auto-unlock đã được khởi động (mỗi 30 giây)");
+autoUnlockPendingSlots();
+console.log("Auto-unlock pending slots đã được khởi động");
 
-// SOCKET EVENTS – CHỈ 1 LẦN DUY NHẤT!
+// ======================= SOCKET EVENTS =======================
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
@@ -67,10 +80,33 @@ io.on("connection", (socket) => {
   });
 });
 
-// DATABASE & START SERVER
+// ======================= DATABASE & START =======================
 const db = require("./models");
-db.sequelize.sync({ alter: true }).then(() => {
-  server.listen(3001, () => {
-    console.log("Server running on http://localhost:3001");
+
+db.sequelize
+  .sync({ alter: true })
+  .then(() => {
+    // PRE-LOAD MODEL ĐỂ KHÔNG BỊ CHẬM LẦN ĐẦU!
+    async function preloadOllamaModel() {
+      console.log("Đang preload model Ollama (phi3:mini)...");
+      try {
+        const res = await axios.post("http://localhost:11434/api/chat", {
+          model: "phi3:mini",
+          messages: [{ role: "user", content: "hi" }],
+          stream: false,
+        });
+        console.log("Preload thành công! Bot sẵn sàng!");
+      } catch (err) {
+        console.error("Preload thất bại (Ollama chưa chạy?):", err.message);
+      }
+    }
+
+    // Gọi ngay khi server khởi động
+    preloadOllamaModel();
+    server.listen(3001, () => {
+      console.log("SERVER RUNNING ON http://localhost:3001");
+    });
+  })
+  .catch((err) => {
+    console.error("Không kết nối được database:", err);
   });
-});

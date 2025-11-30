@@ -202,4 +202,35 @@ router.get("/all", async (req, res) => {
   }
 });
 
+// THÊM ĐOẠN NÀY VÀO CUỐI file routes/Courts.js (trước module.exports)
+
+router.post(
+  "/:id/background",
+  validateToken,
+  authorizeRole("admin"),
+  upload.single("background"), // tên field là "background"
+  async (req, res) => {
+    try {
+      if (!req.file)
+        return res.status(400).json({ error: "Không có file nào được upload" });
+
+      const backgroundUrl = `http://localhost:3001/uploads/${req.file.filename}`;
+
+      const updated = await Courts.update(
+        { backgroundUrl },
+        { where: { id: req.params.id } }
+      );
+
+      if (updated[0] === 0) {
+        return res.status(404).json({ error: "Không tìm thấy sân" });
+      }
+
+      res.json({ backgroundUrl });
+    } catch (err) {
+      console.error("Lỗi upload background:", err);
+      res.status(500).json({ error: "Upload ảnh nền thất bại" });
+    }
+  }
+);
+
 module.exports = router;

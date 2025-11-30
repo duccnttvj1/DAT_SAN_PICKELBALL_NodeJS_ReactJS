@@ -8,11 +8,14 @@ const {
   Schedule,
   BookingDetail,
   CourtFields,
+  // NEW: Thêm model Coupons
+  Coupons,
 } = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddelwares");
 const payos = require("../config/payos");
+const { calculateDiscount } = require("../utils/discountUtils");
 
-// TẠO TEMP ORDER
+/// TẠO TEMP ORDER - PHIÊN BẢN HOÀN CHỈNH, AN TOÀN Tuyệt đối
 router.post("/temp-order", validateToken, async (req, res) => {
   const {
     scheduleIds,
@@ -21,37 +24,147 @@ router.post("/temp-order", validateToken, async (req, res) => {
     phone,
     note,
     courtFieldId,
-    totalAmount,
+    totalAmount: originalTotalAmount,
+    couponCode, // ← vẫn nhận (tương thích cũ)
+    couponId, // ← NHẬN MỚI: ưu tiên dùng cái này
   } = req.body;
+
   const userId = req.user.id;
+
+  // Validate đầu vào cơ bản
+  if (
+    !scheduleIds?.length ||
+    !selectedSlots?.length ||
+    !courtFieldId ||
+    !originalTotalAmount
+  ) {
+    return res.status(400).json({ error: "Thiếu dữ liệu bắt buộc" });
+  }
+
+  const t = await db.sequelize.transaction();
 
   try {
     const orderCode = Date.now();
 
-    await PaymentHistories.create({
-      userId,
-      orderCode: orderCode.toString(),
-      totalAmount,
-      state: "pending",
-      paymentDate: null,
-    });
-
-    await TempPaymentOrder.create({
-      orderCode,
+    // ===== 1. Tính toán và validate coupon (hỗ trợ cả couponId và couponCode) =====
+    const discountInfo = await calculateDiscount(
+      couponId || couponCode,
+      originalTotalAmount,
       userId,
       courtFieldId,
-      data: { scheduleIds, selectedSlots, fullName, phone, note, totalAmount },
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      t
+    );
+
+    const {
+      finalAmount,
+      discountAmount = 0,
+      coupon = null,
+      message: discountMessage = null,
+    } = discountInfo;
+
+    // Nếu frontend gửi mã (dù là code hay id) nhưng không hợp lệ → báo lỗi
+    if ((couponCode || couponId) && !coupon) {
+      await t.rollback();
+      return res.status(400).json({
+        error: discountMessage || "Mã giảm giá không hợp lệ hoặc đã hết hạn",
+      });
+    }
+
+    // ===== 2. LOCK các slot =====
+    const [updatedCount] = await Schedule.update(
+      {
+        state: "pending",
+        lockedBy: userId,
+        lockedAt: new Date(),
+      },
+      {
+        where: {
+          id: { [Op.in]: scheduleIds },
+          [Op.or]: [
+            { state: "available" },
+            { state: "pending", lockedBy: userId },
+          ],
+        },
+        transaction: t,
+      }
+    );
+
+    const lockedSlots = await Schedule.findAll({
+      where: {
+        id: { [Op.in]: scheduleIds },
+        state: "pending",
+        lockedBy: userId,
+      },
+      transaction: t,
     });
 
-    res.json({ orderCode });
+    if (lockedSlots.length !== scheduleIds.length) {
+      await t.rollback();
+      return res.status(409).json({
+        error: "Một số khung giờ đã được người khác đặt! Vui lòng chọn lại.",
+      });
+    }
+
+    // ===== 3. Lưu PaymentHistories =====
+    await PaymentHistories.create(
+      {
+        userId,
+        orderCode: orderCode.toString(),
+        totalAmount: finalAmount,
+        discountAmount,
+        state: "pending",
+        paymentDate: null,
+      },
+      { transaction: t }
+    );
+
+    // ===== 4. Lưu TempPaymentOrder =====
+    const tempOrderData = {
+      scheduleIds,
+      selectedSlots,
+      fullName: fullName || null,
+      phone: phone || null,
+      note: note || null,
+      courtFieldId,
+      originalTotalAmount,
+      totalAmount: finalAmount,
+      discountAmount,
+      couponCode: coupon ? coupon.code : null,
+      couponId: coupon ? coupon.id : null,
+    };
+
+    await TempPaymentOrder.create(
+      {
+        orderCode,
+        userId,
+        courtFieldId,
+        data: tempOrderData,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    return res.json({
+      success: true,
+      orderCode,
+      originalAmount: originalTotalAmount,
+      discountAmount,
+      finalAmount,
+      couponApplied: !!coupon,
+      message: coupon ? discountMessage : "Không áp dụng mã giảm giá",
+    });
   } catch (err) {
+    await t.rollback();
     console.error("Temp order error:", err);
-    res.status(500).json({ error: "Lưu tạm thất bại" });
+    return res
+      .status(500)
+      .json({ error: "Tạo đơn tạm thất bại. Vui lòng thử lại!" });
   }
 });
 
-// CONFIRM ORDER – ĐÃ FIX HOÀN CHỈNH
+// CONFIRM ORDER – Đã tích hợp Coupon (Cập nhật usage count)
 router.post("/confirm", validateToken, async (req, res) => {
   let orderCode = req.body.orderCode;
   const userId = req.user.id;
@@ -68,6 +181,7 @@ router.post("/confirm", validateToken, async (req, res) => {
 
     let payosInfo;
     try {
+      // Lấy thông tin PayOS
       payosInfo = await payos.paymentRequests.get(orderCode);
     } catch (payosErr) {
       await t.rollback();
@@ -80,7 +194,7 @@ router.post("/confirm", validateToken, async (req, res) => {
       return res.status(400).json({ error: "Thanh toán chưa hoàn tất!" });
     }
 
-    // 2. LẤY TEMP ORDER + TIẾP TỤC LOGIC CŨ
+    // 2. LẤY TEMP ORDER
     const tempOrder = await TempPaymentOrder.findOne({
       where: { orderCode, userId },
       transaction: t,
@@ -98,7 +212,16 @@ router.post("/confirm", validateToken, async (req, res) => {
       return res.status(410).json({ error: "Đơn hàng tạm đã hết hạn!" });
     }
 
-    const { scheduleIds, selectedSlots, note } = tempOrder.data || {};
+    // Lấy dữ liệu đã bao gồm thông tin giảm giá
+    const {
+      scheduleIds,
+      selectedSlots,
+      note,
+      totalAmount: finalAmount, // Số tiền đã giảm (amount đã thanh toán)
+      discountAmount, // Số tiền giảm giá
+      couponId, // ID coupon để cập nhật usage
+    } = tempOrder.data || {};
+
     if (!scheduleIds?.length || !selectedSlots?.length) {
       await t.rollback();
       return res.status(400).json({ error: "Dữ liệu đơn hàng không hợp lệ" });
@@ -134,6 +257,14 @@ router.post("/confirm", validateToken, async (req, res) => {
         .json({ error: "Một số khung giờ đã bị người khác đặt!" });
     }
 
+    // 3. NEW: Cập nhật lượt sử dụng coupon (nếu có)
+    if (couponId) {
+      await Coupons.increment(
+        { usageCount: 1 },
+        { where: { id: couponId }, transaction: t }
+      );
+    }
+
     // Tạo BookingDetail
     await Promise.all(
       selectedSlots.map((slot) =>
@@ -145,8 +276,11 @@ router.post("/confirm", validateToken, async (req, res) => {
             status: "SUCCESS",
             userId,
             courtFieldId: tempOrder.courtFieldId,
-            price: slot.price,
+            price: slot.price, // Giữ nguyên giá slot
             orderCode: orderCode.toString(),
+            // NEW: Lưu thông tin tiền tệ cuối cùng
+            discountAmount: discountAmount || 0,
+            finalAmount: finalAmount,
           },
           { transaction: t }
         )
@@ -155,7 +289,11 @@ router.post("/confirm", validateToken, async (req, res) => {
 
     // Cập nhật PaymentHistories
     await PaymentHistories.update(
-      { state: "completed", paymentDate: new Date() },
+      {
+        state: "completed",
+        paymentDate: new Date(),
+        discountAmount: discountAmount || 0, // NEW: lưu discountAmount
+      },
       { where: { orderCode, userId }, transaction: t }
     );
 
@@ -189,12 +327,24 @@ router.get("/info/:orderCode", async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
     }
 
+    let courtId = null;
+    const tempOrder = await TempPaymentOrder.findOne({
+      where: { orderCode: req.params.orderCode },
+    });
+    if (tempOrder && tempOrder.courtFieldId) {
+      const courtField = await CourtFields.findByPk(tempOrder.courtFieldId, {
+        include: [{ model: db.Courts, as: "Court", attributes: ["id"] }],
+      });
+      courtId = courtField?.Court?.id || null;
+    }
+
     res.json({
       orderCode: paymentInfo.orderCode,
       amount: paymentInfo.amount,
       description: paymentInfo.description,
       qrCode: paymentInfo.qrCode, // Nếu PayOS trả qrCode
       checkoutUrl: paymentInfo.checkoutUrl,
+      courtId,
     });
   } catch (err) {
     console.error("[PAYMENT INFO] Lỗi:", err.response?.data || err); // DEBUG
@@ -223,9 +373,7 @@ router.get("/status/:orderCode", async (req, res) => {
 
 // === THÊM VÀO CUỐI file routes/payment.js (trước module.exports) ===
 
-// TẠO PAYMENT LINK PAYOS – ĐÃ FIX 100% LỖI courtId null
-// TẠO PAYMENT LINK PAYOS – ĐÚNG CHO V2, ĐÃ FIX 100%
-// TẠO PAYMENT LINK PAYOS – ĐÚNG CHO @payos/node V2.2+ (NAMESPACE paymentRequests)
+// TẠO PAYMENT LINK PAYOS – Đã tích hợp Coupon
 router.post("/create-payment-link", validateToken, async (req, res) => {
   const { orderCode } = req.body;
   const userId = req.user.id;
@@ -253,8 +401,14 @@ router.post("/create-payment-link", validateToken, async (req, res) => {
         .json({ error: "Đơn hàng tạm không tồn tại hoặc đã hết hạn!" });
     }
 
-    const { totalAmount, selectedSlots, fullName, phone, note } =
-      tempOrder.data;
+    // Lấy thông tin tiền đã được tính toán (đã giảm giá) từ Temp Order
+    const {
+      totalAmount: finalAmount, // Số tiền cuối cùng đã giảm giá
+      selectedSlots,
+      fullName,
+      phone,
+      couponCode, // NEW: Lấy couponCode để đưa vào description
+    } = tempOrder.data;
     const courtFieldId = tempOrder.courtFieldId;
 
     const courtField = await CourtFields.findByPk(courtFieldId, {
@@ -268,13 +422,20 @@ router.post("/create-payment-link", validateToken, async (req, res) => {
     const courtId =
       courtField.Court?.courtId || courtField.courtId || "unknown";
 
+    // Cấu trúc description mới để bao gồm thông tin coupon
+    let description = `Đặt sân${
+      fullName ? " - " + fullName.split(" ")[0] : ""
+    }`;
+    if (couponCode) {
+      description += ` - KM: ${couponCode}`; // Thêm mã KM vào mô tả
+    }
+    description = description.trim().substring(0, 25);
+
     // Cấu trúc data ĐÚNG CHO V2.2+ (orderCode đưa vào data, không truyền riêng)
     const paymentData = {
       orderCode: Number(orderCode), // Phải là number
-      amount: totalAmount, // Số tiền (number, VND)
-      description: `Đặt sân${fullName ? " - " + fullName.split(" ")[0] : ""}`
-        .trim()
-        .substring(0, 25),
+      amount: finalAmount, // SỬ DỤNG finalAmount (đã giảm giá)
+      description: description,
       items: selectedSlots.map((slot) => ({
         // Mảng items chi tiết (tùy chọn nhưng khuyến khích)
         name: `${courtField.fieldName || "Sân nhỏ"} - ${slot.date} ${
@@ -283,8 +444,8 @@ router.post("/create-payment-link", validateToken, async (req, res) => {
         quantity: 1,
         price: slot.price,
       })),
-      returnUrl: `http://localhost:3000/success?orderCode=${orderCode}`,
-      cancelUrl: `http://localhost:3000/booking-detail/${courtId}`,
+      returnUrl: `http://localhost:3000/payment-success?orderCode=${orderCode}`,
+      cancelUrl: `http://localhost:3000/payment-cancel?orderCode=${orderCode}`,
       buyerName: fullName || undefined,
       buyerPhone: phone || undefined,
     };
@@ -313,7 +474,7 @@ router.post("/create-payment-link", validateToken, async (req, res) => {
     res.status(500).json({
       error:
         "Tạo link thanh toán thất bại: " +
-        (err.message || "Lỗi không xác định"),
+        (err.response?.data?.desc || err.message || "Lỗi không xác định"),
     });
   }
 });

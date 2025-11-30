@@ -1,7 +1,39 @@
 const express = require("express");
 const router = express.Router();
-const { PaymentHistories } = require("../models");
+const {
+  PaymentHistories,
+  TempPaymentOrder,
+  Schedule,
+  CourtFields,
+} = require("../models");
 const { validateToken } = require("../middlewares/AuthMiddelwares");
+const db = require("../models");
+const { Op } = require("sequelize");
+
+// [GET] ADMIN: Lấy TẤT CẢ giao dịch (dành cho trang quản lý)
+router.get("/admin/all", validateToken, async (req, res) => {
+  try {
+    // Chỉ admin mới được xem tất cả
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ error: "Chỉ admin mới xem được" });
+    }
+
+    const payments = await PaymentHistories.findAll({
+      include: [
+        {
+          model: db.Users,
+          attributes: ["fullName", "phone"],
+        },
+      ],
+      order: [["paymentDate", "DESC"]],
+    });
+
+    res.json(payments);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Lỗi server" });
+  }
+});
 
 router.get("/history", validateToken, async (req, res) => {
   try {
@@ -160,6 +192,104 @@ router.delete("/history/:id", validateToken, async (req, res) => {
       success: false,
       message: "Lỗi khi xóa giao dịch",
     });
+  }
+});
+
+// [POST] HỦY GIAO DỊCH – ĐÃ FIX LỖI ROLLBACK SAU COMMIT
+router.post("/cancel", validateToken, async (req, res) => {
+  const { orderCode } = req.body;
+  const userId = req.user.id;
+
+  if (!orderCode) {
+    return res.status(400).json({ error: "Thiếu orderCode" });
+  }
+
+  let t;
+  try {
+    t = await db.sequelize.transaction();
+
+    // 1. Tìm giao dịch
+    const payment = await PaymentHistories.findOne({
+      where: { orderCode },
+      transaction: t,
+    });
+
+    if (!payment) {
+      await t.rollback();
+      return res.status(404).json({ error: "Không tìm thấy giao dịch" });
+    }
+
+    // 2. Kiểm tra quyền
+    if (payment.userId !== userId && req.user.role !== "admin") {
+      await t.rollback();
+      return res
+        .status(403)
+        .json({ error: "Bạn không có quyền hủy giao dịch này" });
+    }
+
+    // 3. Mở lại slot nếu có temp order
+    const tempOrder = await TempPaymentOrder.findOne({
+      where: { orderCode },
+      transaction: t,
+    });
+
+    if (tempOrder && tempOrder.data?.scheduleIds?.length > 0) {
+      await Schedule.update(
+        {
+          state: "available",
+          lockedBy: null,
+          lockedAt: null,
+        },
+        {
+          where: { id: { [Op.in]: tempOrder.data.scheduleIds } },
+          transaction: t,
+        }
+      );
+
+      // Emit realtime
+      const io = req.app.get("io");
+      if (io) {
+        tempOrder.data.scheduleIds.forEach((id) => {
+          Schedule.findByPk(id).then((slot) => {
+            if (slot) {
+              io.to(`courtField_${slot.courtFieldId}`).emit("slot-unlocked", {
+                scheduleId: id,
+              });
+            }
+          });
+        });
+      }
+    }
+
+    // 4. Cập nhật trạng thái
+    await payment.update(
+      { state: "cancelled", cancelledAt: new Date() },
+      { transaction: t }
+    );
+
+    // 5. Xóa temp order
+    if (tempOrder) {
+      await tempOrder.destroy({ transaction: t });
+    }
+
+    // CHỈ COMMIT KHI TẤT CẢ THÀNH CÔNG
+    await t.commit();
+
+    // Trả về courtId
+    const courtFieldId = tempOrder?.courtFieldId;
+    const courtField = courtFieldId
+      ? await CourtFields.findByPk(courtFieldId)
+      : null;
+    const courtId = courtField?.courtId || courtField?.Court?.id;
+
+    res.json({ success: true, courtId });
+  } catch (err) {
+    // CHỈ ROLLBACK NẾU TRANSACTION CHƯA COMMIT
+    if (t && !t.finished) {
+      await t.rollback();
+    }
+    console.error("Hủy giao dịch lỗi:", err);
+    res.status(500).json({ error: "Hủy giao dịch thất bại" });
   }
 });
 

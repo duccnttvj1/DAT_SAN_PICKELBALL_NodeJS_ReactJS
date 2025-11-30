@@ -59,6 +59,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true,
     },
+    backgroundUrl: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null,
+    },
   });
 
   Courts.associate = (models) => {
@@ -71,6 +76,10 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "courtId",
       onDelete: "CASCADE",
       onUpdate: "CASCADE",
+    });
+    Courts.hasMany(models.Coupons, {
+      foreignKey: "courtId",
+      as: "coupons",
     });
   };
   return Courts;

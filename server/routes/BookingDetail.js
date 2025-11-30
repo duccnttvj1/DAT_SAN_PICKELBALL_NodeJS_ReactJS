@@ -1,13 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const {
-  BookingDetail,
-  Users,
-  CourtFields,
-  Schedule,
-  Courts,
-} = require("../models");
+
+const db = require("../models"); // ← Dòng này fix lỗi db is not defined
+const { Op } = require("sequelize");
+const { BookingDetail, Users, CourtFields, Schedule, Courts } = db;
 const { validateToken } = require("../middlewares/AuthMiddelwares");
+const { authorizeRole } = require("../middlewares/AuthorizeRole");
 
 // Middleware: Chỉ chủ hoặc admin
 const allowOwnerOrAdmin = async (req, res, next) => {
@@ -103,7 +101,7 @@ router.post("/", validateToken, async (req, res) => {
 
 // [GET] Danh sách booking
 router.get("/", validateToken, async (req, res) => {
-  const { courtFieldId, date, status } = req.query;
+  const { courtFieldId, date, status, timeRange } = req.query;
   const authUser = req.user;
 
   try {
@@ -117,6 +115,9 @@ router.get("/", validateToken, async (req, res) => {
     if (courtFieldId) where.courtFieldId = courtFieldId;
     if (date) where.date = date;
     if (status) where.status = status;
+    if (timeRange) {
+      where.timeRange = timeRange; // exact match
+    }
 
     const bookings = await BookingDetail.findAll({
       where,
@@ -208,7 +209,7 @@ router.get("/:id", validateToken, async (req, res) => {
           attributes: ["id", "fieldName", "fieldType"],
           include: [
             {
-              model: require("../models").Courts,
+              model: Courts,
               as: "Court",
               attributes: ["courtName"],
             },
@@ -269,14 +270,74 @@ router.patch("/:id", validateToken, allowOwnerOrAdmin, async (req, res) => {
   }
 });
 
-// [DELETE] Xóa
+// [DELETE] HỦY LỊCH → Chỉ cập nhật status, KHÔNG XÓA + MỞ LẠI SLOT
 router.delete("/:id", validateToken, allowOwnerOrAdmin, async (req, res) => {
+  const t = await db.sequelize.transaction();
+
   try {
-    await req.booking.destroy();
-    res.json({ message: "Xóa booking thành công!" });
+    const booking = req.booking; // Từ middleware allowOwnerOrAdmin
+
+    // === 1. MỞ LẠI KHUNG GIỜ TRONG BẢNG SCHEDULE ===
+    const relatedSchedules = await Schedule.findAll({
+      where: {
+        courtFieldId: booking.courtFieldId,
+        Day: booking.date,
+        startTime: {
+          [Op.gte]: booking.timeRange.split(" - ")[0],
+        },
+        state: "booked",
+      },
+      transaction: t,
+    });
+
+    if (relatedSchedules.length > 0) {
+      const scheduleIds = relatedSchedules.map((s) => s.id);
+
+      await Schedule.update(
+        {
+          state: "available",
+          lockedBy: null,
+          lockedAt: null,
+        },
+        {
+          where: { id: { [Op.in]: scheduleIds } },
+          transaction: t,
+        }
+      );
+
+      // Emit realtime cho khách đang xem sân
+      const io = req.app.get("io");
+      if (io) {
+        relatedSchedules.forEach((slot) => {
+          io.to(`courtField_${slot.courtFieldId}`).emit("slot-unlocked", {
+            scheduleId: slot.id,
+          });
+        });
+      }
+    }
+
+    // === 2. CHỈ CẬP NHẬT BookingDetail → KHÔNG XÓA ===
+    await booking.update(
+      {
+        status: "CANCELLED",
+        cancelledAt: new Date(), // Thời gian hủy (rất hữu ích cho báo cáo)
+        cancelledBy: req.user.id, // Ai hủy (admin hay chính khách)
+        // Nếu bạn muốn thêm lý do hủy sau này:
+        // cancelReason: req.body.reason || null,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    res.json({
+      message:
+        "Hủy lịch thành công! Khung giờ đã được mở lại và trạng thái đã được cập nhật.",
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Xóa thất bại!" });
+    await t.rollback();
+    console.error("Hủy lịch thất bại:", err);
+    res.status(500).json({ error: "Hủy lịch thất bại!" });
   }
 });
 
@@ -339,12 +400,9 @@ router.post("/create-from-payment", validateToken, async (req, res) => {
 
     const bookings = await Promise.all(bookingPromises);
 
-    await tempOrder.destroy({ transaction: t });
     await t.commit();
 
-    const courtField = await require("../models").CourtFields.findByPk(
-      courtFieldId
-    );
+    const courtField = await CourtFields.findByPk(courtFieldId);
     const courtId = courtField?.courtId;
 
     res.json({
@@ -358,5 +416,119 @@ router.post("/create-from-payment", validateToken, async (req, res) => {
     res.status(500).json({ error: "Lỗi hệ thống khi lưu đặt sân" });
   }
 });
+
+// PATCH: Admin sửa lịch đặt sân – an toàn, không crash
+router.patch(
+  "/:id/admin-edit",
+  validateToken,
+  authorizeRole(["admin"]),
+  async (req, res) => {
+    const { id } = req.params;
+    const { date, timeRange, note, status } = req.body;
+
+    if (!date || !timeRange) {
+      return res.status(400).json({ error: "Thiếu ngày hoặc khung giờ" });
+    }
+
+    const t = await db.sequelize.transaction();
+
+    try {
+      const booking = await BookingDetail.findByPk(id, { transaction: t });
+      if (!booking) {
+        await t.rollback();
+        return res.status(404).json({ error: "Không tìm thấy lịch đặt" });
+      }
+
+      // Nếu không thay đổi ngày/giờ → chỉ cập nhật note, status
+      if (booking.date === date && booking.timeRange === timeRange) {
+        await booking.update({ note, status }, { transaction: t });
+        await t.commit();
+        return res.json({ message: "Cập nhật thành công" });
+      }
+
+      // === PHÂN TÍCH KHUNG GIỜ MỚI (bảo vệ lỗi split) ===
+      const timeParts = timeRange.split(" - ");
+      if (timeParts.length !== 2) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ error: "Khung giờ không đúng định dạng" });
+      }
+      const [newStart, newEnd] = timeParts;
+
+      // === KIỂM TRA TRÙNG KHUNG GIỜ MỚI ===
+      const conflict = await BookingDetail.findOne({
+        where: {
+          date,
+          timeRange,
+          courtFieldId: booking.courtFieldId,
+          id: { [Op.ne]: booking.id },
+          status: "SUCCESS",
+        },
+        transaction: t,
+      });
+
+      if (conflict) {
+        await t.rollback();
+        return res.status(400).json({
+          error: "Khung giờ này đã có người đặt rồi!",
+        });
+      }
+
+      // === MỞ LẠI SLOT CŨ ===
+      const oldStartTime = booking.timeRange.split(" - ")[0].trim();
+
+      await Schedule.update(
+        { state: "available", lockedBy: null, lockedAt: null },
+        {
+          where: {
+            courtFieldId: booking.courtFieldId,
+            Day: booking.date,
+            startTime: oldStartTime,
+          },
+          transaction: t,
+        }
+      );
+
+      // === ĐÁNH DẤU SLOT MỚI ===
+      const newStartTime = timeRange.split(" - ")[0].trim();
+
+      const newSlot = await Schedule.findOne({
+        where: {
+          courtFieldId: booking.courtFieldId,
+          Day: date,
+          startTime: newStartTime,
+          state: "available",
+        },
+        transaction: t,
+      });
+
+      if (!newSlot) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ error: "Khung giờ mới không còn trống!" });
+      }
+
+      await Schedule.update(
+        { state: "booked" },
+        { where: { id: newSlot.id }, transaction: t }
+      );
+
+      // Cập nhật booking
+      await booking.update(
+        { date, timeRange, note, status },
+        { transaction: t }
+      );
+
+      await t.commit();
+      res.json({ message: "Sửa lịch thành công!" });
+    } catch (err) {
+      await t.rollback();
+      console.error("Lỗi admin-edit:", err);
+      res.status(500).json({ error: "Lỗi server khi sửa lịch" });
+    }
+  }
+);
 
 module.exports = router;

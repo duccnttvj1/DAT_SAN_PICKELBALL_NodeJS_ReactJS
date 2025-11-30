@@ -37,6 +37,11 @@ module.exports = (sequelize) => {
         allowNull: true,
         unique: true,
       },
+      cancelledAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "Thời điểm hủy giao dịch (khi khách bấm Hủy ở PayOS)",
+      },
     },
     {
       tableName: "PaymentHistories",
